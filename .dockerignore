@@ -1,0 +1,9 @@
+*
+!Dockerfile
+!server.mjs
+!deployment/
+!deployment/prebuilt/
+!deployment/prebuilt/**
+!deployment/runtime/
+!deployment/runtime/package.json
+!deployment/runtime/package-lock.json

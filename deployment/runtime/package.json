@@ -1,0 +1,14 @@
+{
+  "name": "shiyin-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=22.13.0"},
+  "scripts": {"start": "node server.mjs"},
+  "dependencies": {
+    "vinext": "1.0.0-beta.5",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "react-server-dom-webpack": "19.2.6"
+  }
+}

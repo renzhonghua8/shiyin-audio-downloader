@@ -1,0 +1,17 @@
+node_modules/
+.next/
+.vinext/
+/dist/
+.env*
+*.log
+*.tsbuildinfo
+.DS_Store
+.git-credentials
+.npmrc.local
+.openai/
+.wrangler/
+.sites-runtime/
+.playwright-cli/
+/work/
+/outputs/
+/output/
