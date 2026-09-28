@@ -189,6 +189,120 @@ test('Bilibili refuses a short preview before requesting its media', async t => 
   assert.equal(requests.length, 2);
 });
 
+type BiliStage = 'view' | 'play';
+
+async function biliFailureMessage(stage: BiliStage) {
+  if (stage === 'play') {
+    const result = await scanBilibili(REFERER);
+    assert.deepEqual(result.files, []);
+    assert.equal(result.warnings.length, 1);
+    return result.warnings[0];
+  }
+  let message = '';
+  await assert.rejects(scanBilibili(REFERER), error => {
+    assert.ok(error instanceof Error);
+    message = error.message;
+    return true;
+  });
+  return message;
+}
+
+function biliErrorNetwork(t: TestContext, stage: () => BiliStage, failure: () => Response) {
+  return mockNetwork(t, request => {
+    assert.equal(request.url.hostname, 'api.bilibili.com', 'failed API metadata must not trigger a media request');
+    if (request.url.pathname === '/x/web-interface/view' && stage() === 'play') {
+      return biliApi(request, {}, 600)!;
+    }
+    assert.equal(request.url.pathname, stage() === 'view' ? '/x/web-interface/view' : '/x/player/playurl');
+    return failure();
+  });
+}
+
+test('Bilibili video-info errors preserve official -403 details without guessing a permission or region cause', async t => {
+  const officialMessage = '暂时无法提供该视频资料，请稍后再试';
+  const requests = biliErrorNetwork(t, () => 'view', () => Response.json({code: -403, message: officialMessage}));
+  const message = await biliFailureMessage('view');
+  assert.match(message, /视频资料/);
+  assert.match(message, /返回 -403/);
+  assert.ok(message.includes(officialMessage));
+  assert.doesNotMatch(message, /登录|地区|国家|版权/);
+  assert.equal(requests.length, 1, 'a failed view response must end discovery');
+});
+
+test('Bilibili playback errors preserve official msg details and end the affected part without requesting media', async t => {
+  const officialMessage = '当前音视频信息暂未就绪';
+  const requests = biliErrorNetwork(t, () => 'play', () => Response.json({code: -777, msg: officialMessage}));
+  const message = await biliFailureMessage('play');
+  assert.match(message, /播放接口/);
+  assert.match(message, /返回 -777/);
+  assert.ok(message.includes(officialMessage));
+  assert.doesNotMatch(message, /登录|地区|国家|版权/);
+  assert.equal(requests.length, 2, 'only video-info and the failed playback API should be requested');
+});
+
+test('Bilibili HTTP failures identify whether video-info or playback requests failed', async t => {
+  let stage: BiliStage = 'view';
+  const requests = biliErrorNetwork(t, () => stage, () => new Response(null, {status: 412}));
+  for (const current of ['view', 'play'] as const) {
+    stage = current;
+    const message = await biliFailureMessage(current);
+    assert.match(message, current === 'view' ? /视频资料/ : /播放接口/);
+    assert.match(message, /HTTP 412/);
+  }
+  assert.equal(requests.length, 3, 'HTTP failure must not prompt requests to alternate playback interfaces');
+});
+
+test('Bilibili malformed JSON and invalid API envelopes produce a useful data error', async t => {
+  const failures = [
+    () => new Response('<html>not JSON</html>', {headers: {'Content-Type': 'text/html'}}),
+    () => Response.json(null),
+    () => Response.json('not an API object'),
+    () => Response.json([]),
+    () => Response.json({data: {title: 'missing code'}}),
+    () => Response.json({code: 0}),
+    () => Response.json({code: 0, data: []}),
+    () => Response.json({code: 0, data: {title: 'missing video pages'}}),
+  ];
+  let current = failures[0];
+  const requests = biliErrorNetwork(t, () => 'view', () => current());
+  for (const failure of failures) {
+    current = failure;
+    const message = await biliFailureMessage('view');
+    assert.match(message, /视频资料/);
+    assert.match(message, /未返回有效数据/);
+  }
+  assert.equal(requests.length, failures.length, 'invalid metadata must not continue to playback or media');
+});
+
+test('Bilibili normalizes official explanations and keeps at most 160 characters of detail', async t => {
+  const rawMessage = '\u0000  官方\t说明\n  ' + 'x'.repeat(180) + 'UNBOUNDED_TAIL';
+  const normalizedPrefix = '官方 说明 ';
+  const expectedDetail = normalizedPrefix + 'x'.repeat(160 - normalizedPrefix.length);
+  const requests = biliErrorNetwork(t, () => 'view', () => Response.json({code: -700, message: rawMessage}));
+  const message = await biliFailureMessage('view');
+  assert.match(message, /返回 -700/);
+  assert.ok(message.includes(expectedDetail));
+  assert.equal(message.includes(expectedDetail + 'x'), false);
+  assert.equal(message.includes('UNBOUNDED_TAIL'), false);
+  assert.doesNotMatch(message, /[\x00-\x1f\x7f]/);
+  assert.equal(requests.length, 1);
+});
+
+test('Bilibili known login and access codes retain official details without trying other interfaces', async t => {
+  let code = -101;
+  const officialMessage = '该内容需要账户访问权限';
+  const requests = biliErrorNetwork(t, () => 'view', () => Response.json({code, message: officialMessage}));
+  for (const current of [-101, -104]) {
+    code = current;
+    const message = await biliFailureMessage('view');
+    assert.match(message, /视频资料/);
+    assert.match(message, /需要登录或访问权限/);
+    assert.ok(message.includes(`返回 ${current}`));
+    assert.ok(message.includes(officialMessage));
+  }
+  assert.equal(requests.length, 2, 'known permission failures must each stop after their first API response');
+});
+
 test('Ximalaya recognizes share and standard sound links without matching lookalike domains', () => {
   assert.equal(ximalayaTrackId(XIMA_SHARE), TRACK_ID);
   assert.equal(ximalayaTrackId(`https://www.ximalaya.com/sound/${TRACK_ID}`), TRACK_ID);
