@@ -19,7 +19,7 @@ jobs:
       - name: Check the webpage, CSS and API in the production container
         run: |
           docker run -d --name shiyin-test -p 127.0.0.1:18080:3000 shiyin:test
-          curl -fsS --retry 20 --retry-delay 2 --retry-connrefused \
+          curl -fsS --max-time 5 --retry 20 --retry-delay 2 --retry-all-errors \
             http://127.0.0.1:18080/ -o /tmp/shiyin-home.html
           docker exec shiyin-test node --input-type=module -e '
             const base="http://127.0.0.1:3000";
