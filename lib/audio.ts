@@ -14,30 +14,34 @@ function privateIp(ip: string) {
   const n = ip.split('.').map(Number);
   return n[0] === 0 || n[0] === 10 || n[0] === 127 || n[0] >= 224 || (n[0] === 169 && n[1] === 254) || (n[0] === 172 && n[1] >= 16 && n[1] <= 31) || (n[0] === 192 && (n[1] === 168 || n[1] === 0)) || (n[0] === 100 && n[1] >= 64 && n[1] <= 127) || (n[0] === 198 && [18,19].includes(n[1]));
 }
-async function verifyDns(host: string) {
+async function verifyDns(host: string, signal?: AbortSignal) {
   type DnsAnswer={Status:number;Answer?:{type:number;data:string}[]};
   let records:DnsAnswer[]|undefined;
   for(const provider of ['https://cloudflare-dns.com/dns-query','https://dns.google/resolve']){
+    signal?.throwIfAborted();
     try{records=await Promise.all(['A','AAAA'].map(async type=>{
-      const r=await fetch(provider+'?name='+encodeURIComponent(host)+'&type='+type,{headers:{Accept:'application/dns-json'},signal:AbortSignal.timeout(8000)});
+      const timeout=AbortSignal.timeout(8000);
+      const r=await fetch(provider+'?name='+encodeURIComponent(host)+'&type='+type,{headers:{Accept:'application/dns-json'},signal:signal?AbortSignal.any([timeout,signal]):timeout});
       if(!r.ok)throw new Error('DNS 查询失败');
       const data=await r.json() as DnsAnswer;
       if(!Number.isInteger(data.Status)||(data.Answer!==undefined&&!Array.isArray(data.Answer)))throw new Error('DNS 返回无效数据');
       return data;
     }));break;}catch{/* Retry transport failures with the second public resolver. */}
   }
+  signal?.throwIfAborted();
   if(!records)throw new Error('暂时无法确认网站地址，请稍后重试');
   const ips = records.flatMap(d => (d.Answer || []).filter(x => x.type === 1 || x.type === 28));
   if (records.some(d=>d.Status!==0) || !ips.length || ips.some(x => privateIp(x.data))) throw new Error('网站地址无法访问或不是公开地址');
 }
-export async function safeFetch(raw: string, options: { referer?: string; range?: string; long?: boolean; signal?:AbortSignal; dnsCache?:Set<string> } = {}) {
+export async function safeFetch(raw: string, options: { referer?: string; range?: string; long?: boolean; timeoutMs?:number; signal?:AbortSignal; dnsCache?:Set<string> } = {}) {
   let u = publicUrl(raw);
   for (let i = 0; i < 6; i++) {
-    if(!options.dnsCache?.has(u.hostname)){await verifyDns(u.hostname);options.dnsCache?.add(u.hostname);}
+    options.signal?.throwIfAborted();
+    if(!options.dnsCache?.has(u.hostname)){await verifyDns(u.hostname,options.signal);options.dnsCache?.add(u.hostname);}
     const headers: Record<string,string> = { 'User-Agent': 'Mozilla/5.0 (compatible; AudioCollector/1.0)', Accept: '*/*' };
     if (options.referer) headers.Referer = publicUrl(options.referer).href;
     if (options.range) headers.Range = options.range;
-    const timeout=AbortSignal.timeout(options.long ? 600000 : 18000);
+    const timeout=AbortSignal.timeout(options.timeoutMs ?? (options.long ? 600000 : 18000));
     const r = await fetch(u.href, { headers, redirect: 'manual', signal: options.signal?AbortSignal.any([timeout,options.signal]):timeout });
     if ([301,302,303,307,308].includes(r.status)) {
       await r.body?.cancel(); const location = r.headers.get('location');
@@ -75,6 +79,7 @@ async function videoFile(url:string,source:string,title:string,sourceSize=0){con
 export async function scanPage(raw: string) {
   const original = publicUrl(raw).href;
   if(/(?:^|\.)bilibili\.com$/i.test(new URL(original).hostname)&&/\/video\//.test(new URL(original).pathname)){const {scanBilibili}=await import('./bilibili');return scanBilibili(original);}
+  if(/(?:^|\.)ximalaya\.com$/i.test(new URL(original).hostname)){const {scanXimalaya}=await import('./ximalaya');return scanXimalaya(original);}
   const {response:r,url} = await safeFetch(original);
   if (audioResponse(r,url)) {
     const format = inferFormat(url,r.headers.get('content-type')||''); const title = decodeURIComponent(new URL(url).pathname.split('/').pop() || '音频').replace(extensions,'');

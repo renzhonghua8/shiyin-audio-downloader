@@ -40,7 +40,7 @@ jobs:
       - name: Typecheck and compile the exported source on Linux
         run: |
           docker run --rm -v "$PWD:/src" -w /src node:22-bookworm \
-            sh -c 'npm ci --no-audit --no-fund && npm run typecheck && npm run package:runtime'
+            sh -c 'npm ci --no-audit --no-fund && npm run typecheck && npm test && npm run package:runtime'
       - name: Show runtime logs
         if: always()
         run: docker logs shiyin-test || true

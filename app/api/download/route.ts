@@ -6,7 +6,9 @@ export async function GET(request:Request) {
     if(range&&!/^bytes=\d*-\d*$/.test(range))throw new Error('无效下载范围');
     const mode=q.get('mode')||'direct';if(!['direct','extract'].includes(mode))throw new Error('无效处理方式');
     const name=q.get('filename')||filename('音频','audio');
-    const result=await openAudioFile({url,source:q.get('source')||url,title:'音频',filename:name,format:'audio',size:0,mode:mode as 'direct'|'extract'},range);
+    const duration=q.has('duration')?Number(q.get('duration')):undefined;
+    if(duration!==undefined&&(!Number.isFinite(duration)||duration<=0))throw new Error('无效音轨时长');
+    const result=await openAudioFile({url,source:q.get('source')||url,title:'音频',filename:name,format:'audio',size:0,duration,mode:mode as 'direct'|'extract'},range);
     const outputName=mode==='extract'?filename(name.replace(/\.[^.]+$/,''),result.format):name;
     const headers=new Headers(downloadHeaders(outputName.replace(/[\r\n]/g,''),result.type));
     if(q.get('preview')==='1')headers.set('Content-Disposition','inline');

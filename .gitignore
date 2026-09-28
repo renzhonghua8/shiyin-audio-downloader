@@ -2,6 +2,7 @@ node_modules/
 .next/
 .vinext/
 /dist/
+/.test-build-*/
 .env*
 *.log
 *.tsbuildinfo
