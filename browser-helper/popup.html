@@ -1,0 +1,3 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>拾音浏览器助手</title><link rel="stylesheet" href="popup.css"></head>
+<body><main><h1>拾音浏览器助手</h1><p>先打开拾音网页，再点击下方按钮连接。音轨和浏览器会话保留在自己的浏览器。</p><div id="status" role="status">正在读取连接状态…</div><button id="connect" type="button">连接当前拾音网页</button><button id="disconnect" class="secondary" type="button">断开连接</button><ol><li>在拾音网页粘贴 B 站视频链接并扫描。</li><li>助手会依次打开一个普通 B 站页面；遇登录或验证，请自己完成并播放，然后回拾音重试。</li><li>点击下载保存独立 AAC 音轨。批量下载分别保存文件，可在浏览器下载列表查看结果。</li></ol><p class="note">目前支持公开、完整的 B 站 AAC 音轨。付费、试看、DRM 或平台拒绝的内容无法保存。切换拾音网站会断开旧网站；已开始的浏览器下载继续进行。</p></main><script type="module" src="popup.mjs"></script></body></html>

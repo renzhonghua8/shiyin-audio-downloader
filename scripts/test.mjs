@@ -6,7 +6,7 @@ import {spawn} from 'node:child_process';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const testDir = join(root, 'tests');
-const entries = (await readdir(testDir)).filter(name => name.endsWith('.test.ts')).sort();
+const entries = (await readdir(testDir)).filter(name => /\.test\.(?:ts|mjs)$/.test(name)).sort();
 if (!entries.length) throw new Error('No regression tests found.');
 const buildDir = await mkdtemp(join(root, '.test-build-'));
 try {
@@ -22,7 +22,7 @@ try {
     sourcemap: 'inline',
     logLevel: 'warning',
   });
-  const files = entries.map(name => join(buildDir, name.replace(/\.ts$/, '.mjs')));
+  const files = entries.map(name => join(buildDir, name.replace(/\.(?:ts|mjs)$/, '.mjs')));
   const child = spawn(process.execPath, ['--test', ...files], {cwd: root, stdio: 'inherit'});
   process.exitCode = await new Promise((resolve, reject) => {
     child.once('error', reject);

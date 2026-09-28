@@ -14,9 +14,11 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
+      - name: Check deployment script syntax
+        run: for script in deployment/*.sh; do bash -n "$script"; done
       - name: Build Docker image from the committed deployment files
         run: docker build -t shiyin:test .
-      - name: Check the webpage, CSS and API in the production container
+      - name: Check the webpage, CSS, browser helper and API in the production container
         run: |
           docker run -d --name shiyin-test -p 127.0.0.1:18080:3000 shiyin:test
           curl -fsS --max-time 5 --retry 20 --retry-delay 2 --retry-all-errors \
@@ -29,6 +31,9 @@ jobs:
             if(!href)throw Error("Missing stylesheet");
             const css=await fetch(new URL(href,base));
             if(!css.ok||!(await css.text()).length)throw Error("Stylesheet not served");
+            const helper=await fetch(base+"/shiyin-browser-helper.zip");
+            const archive=Buffer.from(await helper.arrayBuffer());
+            if(!helper.ok||archive.length<1000||archive.readUInt32LE(0)!==0x04034b50||!archive.includes(Buffer.from("shiyin-browser-helper/manifest.json")))throw Error("Browser helper archive not served");
             const scan=await fetch(base+"/api/scan",{
               method:"POST",headers:{"Content-Type":"application/json"},
               body:JSON.stringify({url:"http://127.0.0.1/private"})
@@ -48,7 +53,7 @@ jobs:
             const statusResponse=await fetch(base+"/api/transfers?id="+encodeURIComponent(task.id));
             const status=await statusResponse.json();
             if(!statusResponse.ok||status.state!=="failed"||!status.error)throw Error("Download failure status was not shared between routes");
-            console.log("Production page, stylesheet, API and download status verified");
+            console.log("Production page, stylesheet, browser helper ZIP, API and download status verified");
           '
       - name: Typecheck and compile the exported source on Linux
         run: |

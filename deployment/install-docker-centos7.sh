@@ -5,7 +5,8 @@ if [[ $(uname -m) != x86_64 ]]; then echo '此安装脚本只适用于 x86_64 �
 if ! grep -Eq 'CentOS.*release 7\.' /etc/centos-release; then echo '此脚本仅适用于 CentOS 7。'; exit 1; fi
 if command -v docker >/dev/null 2>&1; then
   echo '已有 Docker，不覆盖安装。'
-  systemctl enable --now docker
+  systemctl enable docker
+  systemctl start docker
   docker version
   exit 0
 fi
@@ -44,6 +45,7 @@ gpgcheck=1
 gpgkey=https://download.docker.com/linux/centos/gpg
 REPOS
 yum --disablerepo='*' --enablerepo='shiyin-c7-*' --enablerepo=shiyin-docker install -y docker-ce-26.1.4-1.el7 docker-ce-cli-26.1.4-1.el7 containerd.io-1.6.33-3.1.el7
-systemctl enable --now docker
+systemctl enable docker
+systemctl start docker
 docker version
 echo 'Docker 已安装。下一步执行 bash deployment/deploy.sh，其中包含 Node 容器兼容性检查。'

@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "拾音浏览器助手",
+  "description": "在自己的浏览器正常播放公开哔哩哔哩视频后，将完整独立 AAC 音轨保存到本机。",
+  "version": "1.0.0",
+  "minimum_chrome_version": "120",
+  "permissions": ["activeTab", "scripting", "storage", "downloads", "alarms"],
+  "host_permissions": ["https://www.bilibili.com/*"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "content_scripts": [{"matches": ["https://www.bilibili.com/video/*"], "js": ["page-capture.js"], "run_at": "document_start", "world": "MAIN", "all_frames": false}],
+  "background": {"service_worker": "background.mjs", "type": "module"},
+  "action": {"default_title": "连接拾音浏览器助手", "default_popup": "popup.html"},
+  "content_security_policy": {"extension_pages": "script-src 'self'; object-src 'self'"}
+}
