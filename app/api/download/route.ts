@@ -1,7 +1,11 @@
 import {downloadHeaders,filename} from '@/lib/audio';
 import {openAudioFile} from '@/lib/media';
+import {beginTransfer,failTransfer,wrapTransferStream} from '@/lib/transfers';
 export async function GET(request:Request) {
-  try {const q=new URL(request.url).searchParams;const url=q.get('url');if(!url)throw new Error('缺少音频地址');
+  let transferId:string|undefined,begun=false;
+  try {const q=new URL(request.url).searchParams;
+    if(q.get('preview')!=='1'&&q.has('transferId')){transferId=q.get('transferId')!;beginTransfer(transferId,'file',1);begun=true;}
+    const url=q.get('url');if(!url)throw new Error('缺少音频地址');
     const range=request.headers.get('range')||undefined;
     if(range&&!/^bytes=\d*-\d*$/.test(range))throw new Error('无效下载范围');
     const mode=q.get('mode')||'direct';if(!['direct','extract'].includes(mode))throw new Error('无效处理方式');
@@ -15,6 +19,6 @@ export async function GET(request:Request) {
     if(result.contentRange)headers.set('Content-Range',result.contentRange);
     if(mode==='direct')headers.set('Accept-Ranges','bytes');
     if(result.size)headers.set('Content-Length',String(result.size));
-    return new Response(result.body,{headers,status:result.status});
-  }catch(e){return Response.json({error:e instanceof Error?e.message:'下载失败'},{status:400});}
+    return new Response(transferId?wrapTransferStream(result.body,transferId,result.size||undefined):result.body,{headers,status:result.status});
+  }catch(e){if(begun&&transferId)failTransfer(transferId,e);return Response.json({error:e instanceof Error?e.message:'下载失败'},{status:400,headers:{'Cache-Control':'no-store'}});}
 }

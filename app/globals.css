@@ -11,3 +11,25 @@
 @media(max-width:1360px){.workspace{margin:0 32px}}@media(max-width:960px){.steps{display:none}.main-grid{grid-template-columns:320px minmax(0,1fr);gap:18px}.input-panel{padding:22px}.file-info{gap:10px}.file-icon{display:none}.result-header{padding:22px 20px}.result-header .panel-heading{gap:7px}.choose-cell{width:42px;padding-left:20px!important}.batch-button{padding:8px;font-size:14px}}
 @media(max-width:760px){.topbar{height:70px;padding:0 20px}.brand-en{display:none}.brand strong{font-size:22px}.top-caption{font-size:12px}.workspace{margin:0 18px;padding-top:27px}.page-title{margin-bottom:24px}h1{font-size:28px}.description{font-size:14px}.main-grid{grid-template-columns:1fr;gap:20px}.input-panel{padding:22px}textarea{min-height:160px}.result-panel{min-height:390px}.empty-result{min-height:300px;padding:24px}.file-icon{display:grid;width:42px;height:42px}.file-meta{gap:9px}.download-note{margin:15px 20px}.notice-row{grid-template-columns:1fr;gap:6px}.notice-panel{padding:18px}footer{flex-direction:column;gap:8px}.file-text h3{font-size:16px}.result-header{gap:8px}.result-header h2{font-size:17px}.selection-bar{padding:15px 20px}.download-cell{width:46px;padding-right:8px!important}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+.transfer-panel{padding:20px 26px;background:#f9fbff;border-bottom:1px solid #e2e8f1}
+.transfer-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.transfer-heading h3{font-size:15px;font-weight:650}.transfer-heading>span{font-size:12px;color:#64768d}
+.transfer-help{font-size:12px;color:#73829a;line-height:1.7;margin:6px 0 12px}
+.transfer-card{display:flex;align-items:flex-start;gap:10px;padding:12px;margin-top:8px;border:1px solid #dfe7fa;border-radius:9px;background:#fff;color:#244bf0}
+.transfer-card>svg{flex-shrink:0;margin-top:3px}.transfer-content{min-width:0;flex:1}
+.transfer-title{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;font-size:13px;line-height:1.6}
+.transfer-title strong{color:#28384f;font-weight:550;overflow-wrap:anywhere;min-width:0}.transfer-title>span{flex-shrink:0;font-weight:550}
+.transfer-detail{font-size:12px;color:#748299;line-height:1.7;margin-top:3px;overflow-wrap:anywhere}
+.transfer-content [data-slot=progress]{height:4px;margin-top:9px}
+.transfer-error{font-size:12px;line-height:1.7;margin-top:5px;color:#b44537;overflow-wrap:anywhere}
+.transfer-completed{color:#16845f;border-color:#dbece5;background:#f8fcfa}
+.transfer-failed,.transfer-unavailable{color:#c63543;border-color:#f1d8d9;background:#fffafa}
+.transfer-partial{color:#a36b10;border-color:#eddcb6;background:#fffcf5}
+.file-download-status{display:flex;gap:6px;align-items:center;font-size:12px;color:#244bf0;margin-top:12px;line-height:1.6}
+.file-download-status>svg{width:14px;height:14px;flex-shrink:0}.file-status-completed{color:#16845f}.file-status-failed,.file-status-unavailable{color:#c63543}
+.download-cell{width:82px;padding-right:16px!important}.file-download-button{height:auto;min-height:48px;min-width:50px;flex-direction:column;gap:5px;padding:8px 6px;color:#244bf0;font-size:12px}
+.choose-column{width:52px}.download-column{width:82px}
+@media(max-width:960px){.choose-column{width:42px}}
+@media(max-width:760px){.transfer-panel{padding:16px 20px}.transfer-title{flex-direction:column;gap:2px}.download-cell{width:64px;padding-right:8px!important}.file-download-button{min-width:44px}.transfer-heading{gap:6px}.transfer-heading>span{font-size:11px}}
+@media(max-width:760px){.download-column{width:64px}}
