@@ -41,24 +41,39 @@ async function readPlayResponse(response: Response): Promise<PlayResponse> {
 }
 
 async function getPlayback(trackId: string, referer: string) {
-  let failure = '喜马拉雅暂未向服务器提供播放地址';
+  const failures = new Set<string>();
+  const dnsCache = new Set<string>();
+  let stopFallback = false;
   // The public desktop player itself uses these origins as playback fallbacks.
   // The share page's HTML is a shell and its m.ximalaya.com playback endpoint
   // can fail even when the desktop player's anonymous endpoint succeeds.
-  for (const host of ['mobile.ximalaya.com', 'www.ximalaya.com']) {
+  const profiles = [
+    {host: 'mobile.ximalaya.com', device: 'web', quality: 1, referer},
+    {host: 'www.ximalaya.com', device: 'web', quality: 1, referer},
+    // The official podcast-share page uses this request profile. It can differ
+    // from the desktop player's response; keep the same authorization checks.
+    {host: 'mobile.ximalaya.com', device: 'podcast', quality: 0, referer: `https://m.ximalaya.com/gatekeeper/podcast-share/sound/${trackId}`},
+  ];
+  for (const profile of profiles) {
+    if (stopFallback) break;
     try {
-      const endpoint = `https://${host}/mobile-playpage/track/v3/baseInfo/${Date.now()}?device=web&trackId=${trackId}&trackQualityLevel=1`;
-      const {response} = await safeFetch(endpoint, {referer});
+      const endpoint = `https://${profile.host}/mobile-playpage/track/v3/baseInfo/${Date.now()}?device=${profile.device}&trackId=${trackId}&trackQualityLevel=${profile.quality}`;
+      const {response} = await safeFetch(endpoint, {referer: profile.referer, dnsCache});
       const data = await readPlayResponse(response);
       if (data.ret !== 0) {
-        failure = `喜马拉雅播放接口未提供音频（返回 ${data.ret}），请稍后重试`;
+        const detail = typeof data.msg === 'string' ? data.msg.replace(/[\x00-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0,160) : '';
+        const regionRestricted = data.ret === 927 && /版权|地区|国家|地域/.test(detail);
+        if (regionRestricted) failures.clear();
+        failures.add(regionRestricted ? `喜马拉雅版权地区限制（返回 927）：${detail}` : `喜马拉雅播放接口未提供音频（返回 ${data.ret}）${detail ? '：'+detail : '，接口没有提供详细原因'}`);
+        // A region restriction must not trigger attempts through other players.
+        stopFallback = data.ret === 927 || /验证码|滑块|滑动验证|人机验证|安全验证|captcha|需要登录|登录后/i.test(detail);
         continue;
       }
       if (!data.trackInfo || String(data.trackInfo.trackId) !== trackId) throw new Error('喜马拉雅返回的节目与分享链接不一致');
       return data;
-    } catch (error) { failure = error instanceof Error ? error.message : failure; }
+    } catch (error) { failures.add(error instanceof Error ? error.message : '喜马拉雅暂未向服务器提供播放地址'); }
   }
-  throw new Error(failure);
+  throw new Error([...failures].join('；') || '喜马拉雅暂未向服务器提供播放地址');
 }
 
 function playbackUrl(value: string) {

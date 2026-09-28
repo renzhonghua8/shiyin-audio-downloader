@@ -6,7 +6,7 @@ import {
   ALL_FORMATS, BufferSource, BufferTarget, EncodedAudioPacketSource,
   EncodedPacket, Input, Mp4OutputFormat, Output,
 } from 'mediabunny';
-import {extractRemoteAudio, inspectRemoteMedia} from '../lib/media';
+import {extractRemoteAudio, inspectRemoteMedia, openAudioFile} from '../lib/media';
 import {scanBilibili} from '../lib/bilibili';
 import {scanXimalaya, ximalayaTrackId} from '../lib/ximalaya';
 
@@ -51,7 +51,7 @@ async function fragmentedAudio(seconds: number) {
   return {data, duration: count * packetDuration};
 }
 
-type RequestRecord = {url: URL; range: string | null};
+type RequestRecord = {url: URL; range: string | null; headers: Headers};
 type Handler = (request: RequestRecord) => Response | Promise<Response>;
 
 function mockNetwork(t: TestContext, handler: Handler) {
@@ -62,7 +62,7 @@ function mockNetwork(t: TestContext, handler: Handler) {
     if (url.hostname === 'cloudflare-dns.com' || url.hostname === 'dns.google') {
       return Response.json({Status: 0, Answer: [{type: 1, data: '1.1.1.1'}]});
     }
-    const record = {url, range: headers.get('range')};
+    const record = {url, range: headers.get('range'), headers};
     requests.push(record);
     return handler(record);
   });
@@ -268,4 +268,164 @@ test('Ximalaya rejects a media file smaller than the advertised complete recordi
   const result = await scanXimalaya(XIMA_SHARE);
   assert.deepEqual(result.files, []);
   assert.match(result.warnings.join(' '), /小于完整节目/);
+});
+
+function podcastFallbackRequest(request: RequestRecord) {
+  assert.equal(request.url.hostname, 'mobile.ximalaya.com');
+  assert.equal(request.url.searchParams.get('device'), 'podcast');
+  assert.equal(request.url.searchParams.get('trackQualityLevel'), '0');
+  assert.equal(request.headers.get('referer'), `https://m.ximalaya.com/gatekeeper/podcast-share/sound/${TRACK_ID}`);
+  assert.equal(request.headers.has('cookie'), false, 'anonymous playback must not invent a browser session');
+  assert.equal(request.headers.has('authorization'), false);
+}
+
+test('Ximalaya falls back from unavailable web playback to the public podcast player and preserves complete media', async t => {
+  const fixture = await fragmentedAudio(8);
+  const media = rangeMedia(fixture.data);
+  const playback = ximaPlayback({
+    duration: fixture.duration,
+    playUrlList: [{url: MEDIA, type: 'M4A_64', fileSize: fixture.data.length, qualityLevel: 0}],
+  });
+  const requests = mockNetwork(t, request => {
+    const api = ximaApi(request, {ret: 1001, msg: '系统繁忙，请稍后再试!'});
+    if (api) {
+      if (request.url.searchParams.get('device') === 'web') {
+        assert.equal(request.url.searchParams.get('trackQualityLevel'), '1');
+        return api;
+      }
+      podcastFallbackRequest(request);
+      return Response.json(playback);
+    }
+    assert.equal(request.url.href, MEDIA);
+    return media.respond(request);
+  });
+  const result = await scanXimalaya(XIMA_SHARE + '#untrusted-fragment');
+  assert.equal(result.files.length, 1);
+  assert.deepEqual(result.warnings, []);
+  const file = result.files[0];
+  assert.equal(file.mode, 'direct');
+  assert.equal(file.format, 'm4a');
+  assert.equal(file.size, fixture.data.length);
+  assert.equal(file.duration, fixture.duration);
+  const webOrigins = new Set(requests.filter(request => request.url.searchParams.get('device') === 'web').map(request => request.url.hostname));
+  assert.deepEqual(webOrigins, new Set(['mobile.ximalaya.com', 'www.ximalaya.com']));
+  const audio = await openAudioFile(file);
+  const bytes = new Uint8Array(await new Response(audio.body).arrayBuffer());
+  assert.deepEqual(bytes, fixture.data, 'fallback must return all original media bytes');
+  const input = new Input({formats: ALL_FORMATS, source: new BufferSource(bytes)});
+  try {
+    const track = await input.getPrimaryAudioTrack();
+    assert.ok(track);
+    assert.equal(await track.getCodec(), 'aac');
+    assert.ok(Math.abs(await track.computeDuration() - fixture.duration) < packetDuration);
+  } finally { input.dispose(); }
+});
+
+test('Ximalaya stops on 927 and retains the bounded official explanation', async t => {
+  const officialMessage = '当前播放接口暂时无法提供音频：' + 'x'.repeat(180) + 'UNBOUNDED_TAIL';
+  const requests = mockNetwork(t, request => {
+    const api = ximaApi(request, {ret: 927, msg: officialMessage});
+    assert.ok(api, 'failed playback metadata must never request media');
+    return api;
+  });
+  await assert.rejects(scanXimalaya(XIMA_SHARE), error => {
+    assert.ok(error instanceof Error);
+    assert.match(error.message, /927/);
+    assert.ok(error.message.includes(officialMessage.slice(0, 160)));
+    assert.equal(error.message.includes(officialMessage.slice(0, 161)), false);
+    assert.equal(error.message.includes('UNBOUNDED_TAIL'), false);
+    return true;
+  });
+  assert.equal(requests.length, 1, '927 must not trigger alternate playback profiles');
+});
+
+test('Ximalaya reports the official copyright region restriction without requesting alternate players or media', async t => {
+  const officialMessage = '很抱歉，由于版权方要求，您所在的地区/国家暂时无法使用该资源';
+  const requests = mockNetwork(t, request => {
+    const api = ximaApi(request, {ret: 927, msg: officialMessage});
+    assert.ok(api, 'a copyright restriction must not trigger a media request');
+    return api;
+  });
+  await assert.rejects(scanXimalaya(XIMA_SHARE), error => {
+    assert.ok(error instanceof Error);
+    assert.match(error.message, /927/);
+    assert.match(error.message, /版权/);
+    assert.match(error.message, /地区|国家/);
+    assert.ok(error.message.includes(officialMessage), 'preserve the platform-provided restriction reason');
+    return true;
+  });
+  assert.equal(requests.length, 1, 'the first restriction response must end playback discovery');
+  assert.equal(requests[0].url.searchParams.get('device'), 'web');
+});
+
+test('Ximalaya stops on 927 without an official message while leaving its cause unspecified', async t => {
+  const requests = mockNetwork(t, request => {
+    const api = ximaApi(request, {ret: 927});
+    assert.ok(api, 'unexplained 927 responses must not trigger a media request');
+    return api;
+  });
+  await assert.rejects(scanXimalaya(XIMA_SHARE), error => {
+    assert.ok(error instanceof Error);
+    assert.match(error.message, /927/);
+    assert.match(error.message, /没有提供详细原因|未提供.*原因|原因.*未知/);
+    assert.doesNotMatch(error.message, /版权|地区|国家/);
+    return true;
+  });
+  assert.equal(requests.length, 1, 'an unexplained 927 must not retry with different profiles');
+});
+
+test('Ximalaya podcast fallback still rejects paid, private, unauthorized and preview-only metadata', async t => {
+  const cases = [
+    {name: 'paid', info: {isPaid: true}, warning: /登录、付费或播放授权/},
+    {name: 'private', info: {isPublic: false}, warning: /登录、付费或播放授权/},
+    {name: 'unauthorized', info: {isAuthorized: false}, warning: /登录、付费或播放授权/},
+    {name: 'preview', info: {sampleDuration: 30}, warning: /试听片段/},
+  ];
+  for (const item of cases) {
+    await t.test(item.name, async subtest => {
+      const requests = mockNetwork(subtest, request => {
+        const api = ximaApi(request, {ret: 1001, msg: '系统繁忙，请稍后再试!'});
+        assert.ok(api, 'protected fallback metadata must never trigger a media request');
+        if (request.url.searchParams.get('device') === 'web') return api;
+        podcastFallbackRequest(request);
+        return Response.json(ximaPlayback(item.info));
+      });
+      const result = await scanXimalaya(XIMA_SHARE);
+      assert.deepEqual(result.files, []);
+      assert.match(result.warnings.join(' '), item.warning);
+      assert.equal(requests.filter(request => request.url.searchParams.get('device') === 'podcast').length, 1);
+    });
+  }
+});
+
+test('Ximalaya stops at a valid restricted web response instead of trying alternate public-looking playback', async t => {
+  const requests = mockNetwork(t, request => {
+    const api = ximaApi(request, ximaPlayback(request.url.searchParams.get('device') === 'web' ? {isPaid: true} : {}));
+    assert.ok(api, 'restricted playback must not request media');
+    return api;
+  });
+  const result = await scanXimalaya(XIMA_SHARE);
+  assert.deepEqual(result.files, []);
+  assert.match(result.warnings.join(' '), /付费/);
+  assert.equal(requests.length, 1, 'successful metadata is authoritative even when it requires permission');
+});
+
+test('Ximalaya preserves verification and login requirements without attempting alternate players', async t => {
+  for (const officialMessage of ['请完成滑块验证后重试', '需要登录后才能播放']) {
+    await t.test(officialMessage, async subtest => {
+      const requests = mockNetwork(subtest, request => {
+        const api = ximaApi(request, {ret: 1001, msg: officialMessage});
+        assert.ok(api, 'a verification challenge must not request media');
+        return api;
+      });
+      await assert.rejects(scanXimalaya(XIMA_SHARE), error => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /1001/);
+        assert.ok(error.message.includes(officialMessage));
+        return true;
+      });
+      assert.equal(requests.length, 1, 'permission or verification responses must stop anonymous retries');
+      assert.equal(requests[0].url.searchParams.get('device'), 'web');
+    });
+  }
 });
